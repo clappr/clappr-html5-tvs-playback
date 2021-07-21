@@ -3,6 +3,7 @@ import mockConsole from 'jest-mock-console'
 
 import { Events, Core, Container, Playback, UIObject, version } from '@clappr/core'
 import HTML5TVsPlayback from './html5_playback'
+import DRMHandler from './drm/drm_handler'
 import { READY_STATE_STAGES } from './utils/constants'
 
 const LOG_WARN_HEAD_MESSAGE = '%c[warn][html5_tvs_playback]'
@@ -382,6 +383,17 @@ describe('HTML5TVsPlayback', function() {
     })
   })
 
+  test('have a getter called config', () => {
+    expect(Object.getOwnPropertyDescriptor(Object.getPrototypeOf(this.playback), 'config').get).toBeTruthy()
+  })
+
+  test('config getter returns the options.html5TvsPlayback value', () => {
+    const { core, container } = setupTest({ src: URL_VIDEO_MP4_EXAMPLE })
+    core.activeContainer = container
+
+    expect(container.playback.config).toEqual(core.options.html5TvsPlayback)
+  })
+
   describe('constructor', () => {
     test('calls _setPrivateFlags method', () => {
       jest.spyOn(HTML5TVsPlayback.prototype, '_setPrivateFlags')
@@ -404,6 +416,11 @@ describe('HTML5TVsPlayback', function() {
       expect(this.playback._isReady).toBeFalsy()
     })
 
+    test('sets _drmConfigured flag with false value', () => {
+      expect(HTML5TVsPlayback.prototype._drmConfigured).toBeUndefined()
+      expect(this.playback._drmConfigured).toBeFalsy()
+    })
+
     test('sets _isBuffering flag with false value', () => {
       expect(HTML5TVsPlayback.prototype._isBuffering).toBeUndefined()
       expect(this.playback._isBuffering).toBeFalsy()
@@ -422,6 +439,7 @@ describe('HTML5TVsPlayback', function() {
 
   describe('_setupSource method', () => {
     test('avoids unnecessary video.src updates', () => {
+      jest.spyOn(DRMHandler, 'sendLicenseRequest')
       jest.spyOn(this.playback, '_setSourceOnVideoTag')
 
       this.playback.$sourceElement = document.createElement('source')
@@ -429,10 +447,25 @@ describe('HTML5TVsPlayback', function() {
       this.playback.el.appendChild(this.playback.$sourceElement)
       this.playback._setupSource(URL_VIDEO_MP4_EXAMPLE)
 
+      expect(DRMHandler.sendLicenseRequest).not.toHaveBeenCalled()
       expect(this.playback._setSourceOnVideoTag).not.toHaveBeenCalled()
     })
 
-    test('calls _setSourceOnVideoTag method', () => {
+    test('sets license server if one license server URL is configured and _drmConfigured flag is false', () => {
+      const { core, container } = setupTest({ src: URL_VIDEO_MP4_EXAMPLE, html5TvsPlayback: { drm: { licenseServerURL: 'http://fake-domain.com/license_server/playready' } } })
+      core.activeContainer = container
+
+      jest.spyOn(DRMHandler, 'sendLicenseRequest')
+      container.playback._setupSource(URL_VIDEO_MP4_EXAMPLE)
+
+      expect(DRMHandler.sendLicenseRequest).toHaveBeenCalledWith(
+        container.playback.config.drm,
+        container.playback._onDrmConfigured,
+        container.playback._onDrmError,
+      )
+    })
+
+    test('calls _setSourceOnVideoTag method if no one license server URL is configured or _drmConfigured flag is true', () => {
       jest.spyOn(this.playback, '_setSourceOnVideoTag')
       this.playback._setupSource(URL_VIDEO_MP4_EXAMPLE)
 
@@ -471,6 +504,64 @@ describe('HTML5TVsPlayback', function() {
       this.playback._setSourceOnVideoTag(URL_VIDEO_MP4_EXAMPLE)
 
       expect(this.playback.el.firstChild).toEqual(this.playback.$sourceElement)
+    })
+  })
+
+  describe('_onDrmConfigured callback', () => {
+    test('sets _drmConfigured flag with true value', () => {
+      const { core, container } = setupTest({ src: URL_VIDEO_MP4_EXAMPLE })
+      core.activeContainer = container
+      expect(container.playback._drmConfigured).toBeFalsy()
+
+      container.playback._onDrmConfigured()
+
+      expect(container.playback._drmConfigured).toBeTruthy()
+    })
+
+    test('calls _setSourceOnVideoTag method with options.src value', () => {
+      const { core, container } = setupTest({ src: URL_VIDEO_MP4_EXAMPLE })
+      core.activeContainer = container
+      jest.spyOn(container.playback, '_setSourceOnVideoTag')
+      container.playback._onDrmConfigured()
+
+      expect(container.playback._setSourceOnVideoTag).toHaveBeenCalledTimes(1)
+      expect(container.playback._setSourceOnVideoTag).toHaveBeenCalledWith(container.playback.options.src)
+    })
+  })
+
+  describe('_onDrmCleared callback', () => {
+    test('sets _drmConfigured flag with false value', () => {
+      this.playback._drmConfigured = true
+      this.playback._onDrmCleared()
+
+      expect(this.playback._drmConfigured).toBeFalsy()
+    })
+  })
+
+  describe('_onDrmError callback', () => {
+    test('sets _drmConfigured flag with false value', () => {
+      this.playback._drmConfigured = true
+      this.playback._onDrmError()
+
+      expect(this.playback._drmConfigured).toBeFalsy()
+    })
+
+    test('triggers PLAYBACK_ERROR event with formatted error object', () => {
+      const cb = jest.fn()
+
+      this.playback.listenToOnce(this.playback, Events.PLAYBACK_ERROR, cb)
+      this.playback._onDrmError('fake error message')
+
+      expect(cb).toHaveBeenCalledWith(
+        {
+          code: 'html5_tvs_playback:DRM',
+          description: 'fake error message',
+          level: 'FATAL',
+          origin: 'html5_tvs_playback',
+          raw: {},
+          scope: 'playback',
+        },
+      )
     })
   })
 
@@ -598,6 +689,13 @@ describe('HTML5TVsPlayback', function() {
       this.playback._onEnded()
 
       expect(cb).toHaveBeenCalledTimes(1)
+    })
+
+    test('calls _wipeUpMedia method', () => {
+      jest.spyOn(this.playback, '_wipeUpMedia')
+      this.playback._onEnded()
+
+      expect(this.playback._wipeUpMedia).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -727,13 +825,6 @@ describe('HTML5TVsPlayback', function() {
       expect(this.playback._isStopped).toBeTruthy()
     })
 
-    test('sets _isReady flag with false value', () => {
-      this.playback._isReady = true
-      this.playback.stop()
-
-      expect(this.playback._isReady).toBeFalsy()
-    })
-
     test('calls _wipeUpMedia method', () => {
       jest.spyOn(this.playback, '_wipeUpMedia')
       this.playback.stop()
@@ -759,13 +850,6 @@ describe('HTML5TVsPlayback', function() {
       expect(this.playback._isDestroyed).toBeTruthy()
     })
 
-    test('sets _isReady flag with false value', () => {
-      this.playback._isReady = true
-      this.playback.destroy()
-
-      expect(this.playback._isReady).toBeFalsy()
-    })
-
     test('calls _wipeUpMedia method', () => {
       jest.spyOn(this.playback, '_wipeUpMedia')
       this.playback.destroy()
@@ -782,15 +866,36 @@ describe('HTML5TVsPlayback', function() {
   })
 
   describe('_wipeUpMedia method', () => {
-    test('removes src attribute from video element', () => {
-      this.playback._src = URL_VIDEO_MP4_EXAMPLE
-      this.playback.play()
+    beforeEach(() => {
+      this.playback._setSourceOnVideoTag(URL_VIDEO_MP4_EXAMPLE)
+    })
 
-      expect(this.playback.el.src).toEqual(URL_VIDEO_MP4_EXAMPLE)
-
+    test('sets _isReady flag with false value', () => {
+      this.playback._isReady = true
       this.playback._wipeUpMedia()
 
-      expect(this.playback.el.src).toEqual('')
+      expect(this.playback._isReady).toBeFalsy()
+    })
+
+    test('removes license server if _drmConfigured flag is true', () => {
+      jest.spyOn(DRMHandler, 'clearLicenseRequest').mockImplementation(() => {})
+      this.playback._drmConfigured = true
+      this.playback._wipeUpMedia()
+
+      expect(DRMHandler.clearLicenseRequest).toHaveBeenCalledTimes(1)
+      expect(DRMHandler.clearLicenseRequest).toHaveBeenCalledWith(this.playback._onDrmCleared, this.playback._onDrmError)
+    })
+
+    test('removes src attribute from the $sourceElement', () => {
+      this.playback._wipeUpMedia()
+
+      expect(this.playback.$sourceElement.src).toEqual('')
+    })
+
+    test('removes $sourceElement the DOM', () => {
+      this.playback._wipeUpMedia()
+
+      expect(this.playback.el.getElementsByTagName('source').length).toEqual(0)
     })
 
     test('calls native video.load method without arguments', () => {

@@ -1,4 +1,5 @@
 import { Events, Log, Playback, PlayerError, version } from '@clappr/core'
+import DRMHandler from './drm/drm_handler'
 import {
   MIME_TYPES,
   MIME_TYPES_BY_EXTENSION,
@@ -65,6 +66,8 @@ export default class HTML5TVsPlayback extends Playback {
     }
   }
 
+  get config() { return this.options.html5TvsPlayback }
+
   constructor(options, i18n, playerError) {
     super(options, i18n, playerError)
     this._setPrivateFlags()
@@ -72,6 +75,7 @@ export default class HTML5TVsPlayback extends Playback {
   }
 
   _setPrivateFlags() {
+    this._drmConfigured = false
     this._isReady = false
     this._isBuffering = false
     this._isStopped = false
@@ -82,7 +86,9 @@ export default class HTML5TVsPlayback extends Playback {
     const currentSource = this.$sourceElement && this.$sourceElement.src
     if (sourceURL === currentSource) return
 
-    this._setSourceOnVideoTag(sourceURL)
+    this.config && this.config.drm && this.config.drm.licenseServerURL && !this._drmConfigured
+      ? DRMHandler.sendLicenseRequest.call(this, this.config.drm, this._onDrmConfigured, this._onDrmError)
+      : this._setSourceOnVideoTag(sourceURL)
   }
 
   _setSourceOnVideoTag(sourceURL) {
@@ -93,6 +99,27 @@ export default class HTML5TVsPlayback extends Playback {
     this._src = this.$sourceElement.src
 
     this.el.appendChild(this.$sourceElement)
+  }
+
+  _onDrmConfigured() {
+    this._drmConfigured = true
+    this._setSourceOnVideoTag(this.options.src)
+  }
+
+  _onDrmCleared() {
+    this._drmConfigured = false
+  }
+
+  _onDrmError(errorMessage) {
+    this._drmConfigured = false
+
+    const formattedError = this.createError({
+      code: 'DRM',
+      description: errorMessage,
+      level: PlayerError.Levels.FATAL,
+    })
+
+    this.trigger(Events.PLAYBACK_ERROR, formattedError)
   }
 
   _onCanPlay(e) {
@@ -192,6 +219,7 @@ export default class HTML5TVsPlayback extends Playback {
   _onEnded(e) {
     Log.info(this.name, 'The HTMLMediaElement ended event is triggered: ', e)
     this.trigger(Events.PLAYBACK_ENDED, this.name)
+    this._wipeUpMedia()
   }
 
   _onError(e) {
@@ -235,21 +263,22 @@ export default class HTML5TVsPlayback extends Playback {
   stop() {
     this.pause()
     this._isStopped = true
-    this._isReady = false
     this._wipeUpMedia()
     this.trigger(Events.PLAYBACK_STOP)
   }
 
   destroy() {
     this._isDestroyed = true
-    this._isReady = false
     super.destroy()
     this._wipeUpMedia()
     this._src = null
   }
 
   _wipeUpMedia() {
-    this.el.removeAttribute('src') // The src attribute will be added again in play().
+    this._isReady = false
+    this._drmConfigured && DRMHandler.clearLicenseRequest.call(this, this._onDrmCleared, this._onDrmError)
+    this.$sourceElement && this.$sourceElement.removeAttribute('src') // The src attribute will be added again in play().
+    this.$sourceElement && this.$sourceElement.remove()
     this.el.load() // Loads with no src attribute to stop the loading of the previous source and avoid leaks.
   }
 

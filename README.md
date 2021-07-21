@@ -20,14 +20,29 @@ A Clappr HTML5 playback for smart TVs devices that implement the [HbbTV 2.0.1 sp
 ## Features
 * Supports VoD;
   * Current mime types: [`video/mp4`, `application/vnd.apple.mpegurl`, `application/vnd.ms-sstr+xml`].
+* Supports DRM content;
+  * Using [`oipfDrmAgent`](https://www.oipf.tv/docs/OIPF-T1-R2_Specification-Volume-5-Declarative-Application-Environment-v2_3-2014-01-24.pdf#page=121). (Only with Playready at the moment)
 
 ## Configuration
+The options for the playback must be placed in the `html5TvsPlayback` property as shown below:
+
 ```javascript
 var player = new Clappr.Player({
   source: 'http://your.video/here.mp4',
-  plugins: [HTML5TVsPlayback]
+  plugins: [HTML5TVsPlayback],
+  html5TvsPlayback: {
+    drm: {
+      licenseServerURL: 'https://my-license-server.com/keys/my-key',
+    },
+  },
 });
 ```
+
+### `drm {Object}`
+Group all DRM-related config. The currently available configs are:
+
+* #### `licenseServerURL {String}`
+  The license server URL used on the license acquisition. This config is mandatory to play content with DRM.
 
 ## API Documentation
 
@@ -57,7 +72,7 @@ var player = new Clappr.Player({
 | `playback.buffering` | Indicates whether the media on the buffering state. | `{Boolean}` |
 
 ## Next Steps
-- [ ] Media with DRM;
+- [x] Media with DRM;
 - [ ] Live media;
 - [ ] subtitles/closed captions;
 - [ ] multi-audio;
