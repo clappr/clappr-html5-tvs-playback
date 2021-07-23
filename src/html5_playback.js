@@ -5,6 +5,8 @@ import {
   MIME_TYPES_BY_EXTENSION,
   READY_STATE_STAGES,
   UNKNOWN_ERROR,
+  DEFAULT_MINIMUM_DVR_SIZE,
+  LIVE_STATE_THRESHOLD,
   getExtension,
 } from './utils/constants'
 
@@ -27,17 +29,37 @@ export default class HTML5TVsPlayback extends Playback {
 
   get tagName() { return 'video' }
 
+  get mediaType() { return this.el.duration === Infinity ? Playback.LIVE : Playback.VOD }
+
   get isReady() { return this.el.readyState >= READY_STATE_STAGES.HAVE_CURRENT_DATA }
 
   get playing() { return !this.el.paused && !this.el.ended }
 
   get currentTime() { return this.el.currentTime }
 
-  get duration() { return this.el.duration }
+  get duration() {
+    // The HTMLMediaElement.duration returns Infinity for live streams: https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/duration#value
+    return this.isLive
+      ? this.el.seekable.end(this.el.seekable.length - 1) - this.el.seekable.start(0)
+      : this.el.duration
+  }
 
   get ended() { return this.el.ended }
 
   get buffering() { return this._isBuffering }
+
+  get isLive() { return this.mediaType === Playback.LIVE }
+
+  get minimumDvrSizeConfig() {
+    const dvrSizeConfig = this.options.playback && this.options.playback.minimumDvrSize
+    return typeof dvrSizeConfig !== 'undefined' && typeof dvrSizeConfig === 'number' && dvrSizeConfig
+  }
+
+  get dvrSize() { return this.minimumDvrSizeConfig ? this.minimumDvrSizeConfig : DEFAULT_MINIMUM_DVR_SIZE }
+
+  get dvrEnabled() { return this.duration >= this.dvrSize && this.isLive }
+
+  get config() { return this.options.html5TvsPlayback }
 
   get events() {
     return {
@@ -65,8 +87,6 @@ export default class HTML5TVsPlayback extends Playback {
       error: this._onError,
     }
   }
-
-  get config() { return this.options.html5TvsPlayback }
 
   constructor(options, i18n, playerError) {
     super(options, i18n, playerError)
@@ -120,6 +140,11 @@ export default class HTML5TVsPlayback extends Playback {
     })
 
     this.trigger(Events.PLAYBACK_ERROR, formattedError)
+  }
+
+  _updateDvr(status) {
+    this.trigger(Events.PLAYBACK_DVR, status)
+    this.trigger(Events.PLAYBACK_STATS_ADD, { dvr: status })
   }
 
   _onCanPlay(e) {
@@ -239,10 +264,6 @@ export default class HTML5TVsPlayback extends Playback {
       : this.trigger(Events.PLAYBACK_ERROR, formattedError)
   }
 
-  getPlaybackType() {
-    return Playback.VOD
-  }
-
   play() {
     this._isStopped = false
     this._setupSource(this._src)
@@ -253,11 +274,21 @@ export default class HTML5TVsPlayback extends Playback {
 
   pause() {
     this.el.pause()
+    this.dvrEnabled && this._updateDvr(true)
   }
 
   seek(time) {
     if (time < 0) return Log.warn(this.name, 'Attempting to seek to a negative time. Ignoring this operation.')
-    this.el.currentTime = time
+
+    let timeToSeek = time
+
+    // Assumes that is a live state if the time is within the LIVE_STATE_THRESHOLD of the end of the stream.
+    const dvrStatus = timeToSeek < this.duration - LIVE_STATE_THRESHOLD
+
+    this.dvrEnabled && this._updateDvr(dvrStatus)
+    this.el.seekable && this.el.seekable.start && (timeToSeek += this.el.seekable.start(0))
+
+    this.el.currentTime = timeToSeek
   }
 
   stop() {
@@ -317,4 +348,11 @@ export default class HTML5TVsPlayback extends Playback {
    * Use the playing getter instead of it.
    */
   isPlaying() { return this.playing }
+
+  /**
+   * @deprecated
+   * This method currently exists for backward compatibility reasons.
+   * Use the mediaType getter instead of it.
+   */
+  getPlaybackType() { return this.mediaType }
 }
