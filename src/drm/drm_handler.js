@@ -3,6 +3,18 @@ import { Log } from '@clappr/core'
 const MESSAGE_TYPE = 'application/vnd.ms-playready.initiator+xml'
 const DRM_SYSTEM_ID = 'urn:dvb:casystemid:19219'
 
+export const getFullChallengeMessageTemplate = header => {
+  const template = '<?xml version="1.0" encoding="utf-8"?>'
+  + '<PlayReadyInitiator xmlns="http://schemas.microsoft.com/DRM/2007/03/protocols/">'
+  + '<LicenseAcquisition>'
+  + '<Header>'
+  + `${header}`
+  + '</Header>'
+  + '</LicenseAcquisition>'
+  + '</PlayReadyInitiator>'
+  return template
+}
+
 export const getLicenseOverrideMessageTemplate = licenseServerURL => {
   const template = '<?xml version="1.0" encoding="utf-8"?>'
   + '<PlayReadyInitiator xmlns="http://schemas.microsoft.com/DRM/2007/03/protocols/">'
@@ -48,9 +60,9 @@ export function sendLicenseRequest(config = {}, onSuccess = () => {}, onFail = (
       : document.body.appendChild(oipfdrmagent)
   }
 
-  !config.licenseServerURL
-    && Log.warn('DRMHandler', 'No one license server was found. The expected result for this behavior is to clear the current license.')
-  const xmlLicenceAcquisition = getLicenseOverrideMessageTemplate(config.licenseServerURL)
+  const xmlLicenceAcquisition = config.xmlLicenceAcquisition
+    ? getFullChallengeMessageTemplate(config.xmlLicenceAcquisition)
+    : getLicenseOverrideMessageTemplate(config.licenseServerURL)
 
   const drmRightsErrorHandler = resultCode => {
     const errorMessage = {
@@ -61,7 +73,7 @@ export function sendLicenseRequest(config = {}, onSuccess = () => {}, onFail = (
 
     if (resultCode < 2) {
       Log.error('DRMHandler', 'Error at onDRMRightsError call', errorMessage[resultCode])
-      errorCallback(errorMessage[resultCode])
+      return errorCallback(errorMessage[resultCode])
     }
   }
 
@@ -78,12 +90,12 @@ export function sendLicenseRequest(config = {}, onSuccess = () => {}, onFail = (
       5: 'DRM: Unknown DRM system',
     }
 
-    if (resultCode > 0) {
+    if (resultCode !== 0) {
       Log.error('DRMHandler', 'Error at onDRMMessageResult call', errorMessage[resultCode])
-      errorCallback(errorMessage[resultCode])
+      return errorCallback(errorMessage[resultCode])
     }
 
-    successCallback()
+    return successCallback()
   }
 
   try {
@@ -92,7 +104,7 @@ export function sendLicenseRequest(config = {}, onSuccess = () => {}, onFail = (
     oipfdrmagent.sendDRMMessage(MESSAGE_TYPE, xmlLicenceAcquisition, DRM_SYSTEM_ID)
   } catch (error) {
     Log.error('DRMHandler', 'Error at sendDRMMessage call', error.message)
-    errorCallback(error.message)
+    return errorCallback(error.message)
   }
 }
 
