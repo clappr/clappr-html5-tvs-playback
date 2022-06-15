@@ -107,6 +107,7 @@ export default class HTML5TVsPlayback extends Playback {
   constructor(options, i18n, playerError) {
     super(options, i18n, playerError)
     this._onAudioTracksUpdated = this._onAudioTracksUpdated.bind(this)
+    this.playbackType = this.mediaType
 
     this._drmConfigured = false
     this._isReady = false
@@ -402,5 +403,9 @@ export default class HTML5TVsPlayback extends Playback {
    * This method currently exists for backward compatibility reasons.
    * Use the mediaType getter instead of it.
    */
-  getPlaybackType() { return this.mediaType }
+  getPlaybackType() { return this.playbackType }
+
+  setPlaybackType(type) { this.playbackType = type }
+
+  getSourceMedia() { return this._src }
 }

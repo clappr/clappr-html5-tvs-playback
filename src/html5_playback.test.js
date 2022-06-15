@@ -1195,7 +1195,16 @@ describe('HTML5TVsPlayback', function() {
     expect(this.playback.isPlaying()).toEqual(this.playback.playing)
   })
 
-  test('getPlaybackType method returns mediaType getter', () => {
+  test('getPlaybackType method returns playbackType getter', () => {
     expect(this.playback.getPlaybackType()).toEqual(this.playback.mediaType)
+  })
+
+  test('setPlaybackType method updates playbackType with new value', () => {
+    this.playback.setPlaybackType('new value')
+    expect(this.playback.getPlaybackType()).toEqual('new value')
+  })
+
+  test('getSourceMedia method returns source media getter', () => {
+    expect(this.playback.getSourceMedia()).toBe(this.playback._src)
   })
 })
