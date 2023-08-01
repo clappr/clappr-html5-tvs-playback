@@ -88,15 +88,15 @@ describe('HTML5TVsPlayback', function() {
 
   describe('canPlay static method', () => {
     test('checks if one video URL has supported format', () => {
-      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_MP4_EXAMPLE)).toBeTruthy()
-      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_M3U8_EXAMPLE)).toBeTruthy()
-      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_UNSUPPORTED_FORMAT_EXAMPLE)).toBeFalsy()
+      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_MP4_EXAMPLE)).toBe(true)
+      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_M3U8_EXAMPLE)).toBe(true)
+      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_UNSUPPORTED_FORMAT_EXAMPLE)).toBe(false)
     })
 
     test('checks if one video is supported via mime type', () => {
-      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_EXAMPLE, 'video/mp4')).toBeTruthy()
-      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_EXAMPLE, 'application/vnd.apple.mpegurl')).toBeTruthy()
-      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_EXAMPLE, 'mock/xpto')).toBeFalsy()
+      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_EXAMPLE, 'video/mp4')).toBe(true)
+      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_EXAMPLE, 'application/vnd.apple.mpegurl')).toBe(true)
+      expect(HTML5TVsPlayback.canPlay(URL_VIDEO_EXAMPLE, 'mock/xpto')).toBe(false)
     })
   })
 
@@ -136,12 +136,12 @@ describe('HTML5TVsPlayback', function() {
     })
   })
 
-  test('isReady getter returns the check if video.readyState is greater than or equal HAVE_CURRENT_DATA value', () => {
+  test('isReady getter returns the check if video.readyState is greater than or equal HAVE_FUTURE_DATA value', () => {
     jest.spyOn(this.playback.el, 'readyState', 'get').mockReturnValueOnce(READY_STATE_STAGES.HAVE_NOTHING)
 
     expect(this.playback.isReady).toBeFalsy()
 
-    jest.spyOn(this.playback.el, 'readyState', 'get').mockReturnValueOnce(READY_STATE_STAGES.HAVE_CURRENT_DATA)
+    jest.spyOn(this.playback.el, 'readyState', 'get').mockReturnValueOnce(READY_STATE_STAGES.HAVE_FUTURE_DATA)
 
     expect(this.playback.isReady).toBeTruthy()
   })
@@ -606,8 +606,22 @@ describe('HTML5TVsPlayback', function() {
 
       expect(console.log).toHaveBeenNthCalledWith(
         1,
-        LOG_INFO_HEAD_MESSAGE,
-        LOG_INFO_STYLE,
+        LOG_WARN_HEAD_MESSAGE,
+        LOG_WARN_STYLE,
+        'The HTMLMediaElement error event is triggered: ',
+        errorEvent,
+      )
+    })
+
+    test('maps _onError method as error event callback on source element', () => {
+      this.playback._setupSource(URL_VIDEO_MP4_EXAMPLE)
+      const errorEvent = new Event('error')
+      this.playback.$sourceElement.dispatchEvent(errorEvent)
+
+      expect(console.log).toHaveBeenNthCalledWith(
+        1,
+        LOG_WARN_HEAD_MESSAGE,
+        LOG_WARN_STYLE,
         'The HTMLMediaElement error event is triggered: ',
         errorEvent,
       )
@@ -806,13 +820,13 @@ describe('HTML5TVsPlayback', function() {
     })
   })
 
-  describe('_onLoadedData callback', () => {
+  describe('_onCanPlay callback', () => {
     test('calls _signalizeReadyState method if _isReady flag has a falsy value', () => {
       jest.spyOn(this.playback, '_signalizeReadyState')
       this.playback._isReady = true
-      this.playback._onLoadedData()
+      this.playback._onCanPlay()
       this.playback._isReady = false
-      this.playback._onLoadedData()
+      this.playback._onCanPlay()
 
       expect(this.playback._signalizeReadyState).toHaveBeenCalledTimes(1)
     })
@@ -904,6 +918,15 @@ describe('HTML5TVsPlayback', function() {
       expect(cb).toHaveBeenCalledTimes(1)
     })
 
+    test('calls _wipeUpMedia method before notifying PLAYBACK_ENDED event', done => {
+      jest.spyOn(this.playback, '_wipeUpMedia')
+      this.playback.listenToOnce(this.playback, Events.PLAYBACK_ENDED, () => {
+        expect(this.playback._wipeUpMedia).toHaveBeenCalledTimes(1)
+        done()
+      })
+      this.playback._onEnded()
+    })
+
     test('calls _wipeUpMedia method', () => {
       jest.spyOn(this.playback, '_wipeUpMedia')
       this.playback._onEnded()
@@ -913,25 +936,6 @@ describe('HTML5TVsPlayback', function() {
   })
 
   describe('_onError callback', () => {
-    test('logs warn message if is an unknown error', () => {
-      this.playback._onError()
-
-      expect(console.log).toHaveBeenNthCalledWith(
-        3,
-        LOG_WARN_HEAD_MESSAGE,
-        LOG_WARN_STYLE,
-        'HTML5 unknown error: ',
-        {
-          code: 'html5_tvs_playback:unknown',
-          description: 'unknown',
-          level: 'WARN',
-          origin: 'html5_tvs_playback',
-          raw: undefined,
-          scope: 'playback',
-        },
-      )
-    })
-
     test('triggers PLAYBACK_ERROR event with formatted error object', () => {
       const cb = jest.fn()
 
@@ -1187,6 +1191,17 @@ describe('HTML5TVsPlayback', function() {
 
       expect(cb).toHaveBeenCalledTimes(1)
       expect(this.playback._signalizeReadyState).toHaveBeenCalledTimes(5)
+    })
+
+    test('sets _isReady flag with true value before triggering PLAYBACK_READY', done => {
+      jest.spyOn(this.playback, 'isReady', 'get').mockReturnValueOnce(true)
+      this.playback._isReady = false
+      this.playback.listenToOnce(this.playback, Events.PLAYBACK_READY, () => {
+        expect(this.playback._isReady).toBeTruthy()
+        done()
+      })
+
+      this.playback._signalizeReadyState()
     })
 
     test('sets _isReady flag with true value', () => {

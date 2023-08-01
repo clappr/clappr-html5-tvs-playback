@@ -20,7 +20,7 @@ export default class HTML5TVsPlayback extends Playback {
     const sourceExtension = getExtension(resourceUrl)
     const isSourceExtensionSupported = MIME_TYPES_BY_EXTENSION[sourceExtension]
 
-    return isSupportedMimetype || isSourceExtensionSupported
+    return !!(isSupportedMimetype || isSourceExtensionSupported)
   }
 
   get name() { return 'html5_tvs_playback' }
@@ -33,7 +33,7 @@ export default class HTML5TVsPlayback extends Playback {
 
   get mediaType() { return this.el.duration === Infinity ? Playback.LIVE : Playback.VOD }
 
-  get isReady() { return this.el.readyState >= READY_STATE_STAGES.HAVE_CURRENT_DATA }
+  get isReady() { return this.el.readyState >= READY_STATE_STAGES.HAVE_FUTURE_DATA }
 
   get playing() { return !this.el.paused && !this.el.ended }
 
@@ -130,6 +130,7 @@ export default class HTML5TVsPlayback extends Playback {
   constructor(options, i18n, playerError) {
     super(options, i18n, playerError)
     this._onAudioTracksUpdated = this._onAudioTracksUpdated.bind(this)
+    this._sourceElementErrorHandler = this._onError.bind(this)
     this._playbackType = this.mediaType
 
     this._drmConfigured = false
@@ -149,6 +150,7 @@ export default class HTML5TVsPlayback extends Playback {
     this.$sourceElement = document.createElement('source')
     this.$sourceElement.type = MIME_TYPES_BY_EXTENSION[getExtension(sourceURL)]
     this.$sourceElement.src = sourceURL
+    this.$sourceElement.addEventListener('error', this._sourceElementErrorHandler)
     this._src = this.$sourceElement.src
     this._appendSourceElement()
   }
@@ -208,6 +210,7 @@ export default class HTML5TVsPlayback extends Playback {
 
   _onCanPlay(e) {
     Log.info(this.name, 'The HTMLMediaElement canplay event is triggered: ', e)
+    !this._isReady && this._signalizeReadyState()
     if (this._isBuffering) {
       this._isBuffering = false
       this.trigger(Events.PLAYBACK_BUFFERFULL, this.name)
@@ -229,7 +232,6 @@ export default class HTML5TVsPlayback extends Playback {
 
   _onLoadedData(e) {
     Log.info(this.name, 'The HTMLMediaElement loadeddata event is triggered: ', e)
-    !this._isReady && this._signalizeReadyState()
   }
 
   _onWaiting(e) {
@@ -302,25 +304,22 @@ export default class HTML5TVsPlayback extends Playback {
 
   _onEnded(e) {
     Log.info(this.name, 'The HTMLMediaElement ended event is triggered: ', e)
-    this.trigger(Events.PLAYBACK_ENDED, this.name)
     this._wipeUpMedia()
+    this.trigger(Events.PLAYBACK_ENDED, this.name)
   }
 
   _onError(e) {
-    Log.info(this.name, 'The HTMLMediaElement error event is triggered: ', e)
-    const { code, message } = this.el.error || UNKNOWN_ERROR
-    const isUnknownError = code === UNKNOWN_ERROR.code
+    Log.warn(this.name, 'The HTMLMediaElement error event is triggered: ', e)
+    const { code, message } = this.$sourceElement?.error || this.el.error || UNKNOWN_ERROR
 
     const formattedError = this.createError({
       code,
       description: message,
       raw: this.el.error,
-      level: isUnknownError ? PlayerError.Levels.WARN : PlayerError.Levels.FATAL,
+      level: PlayerError.Levels.FATAL,
     })
 
-    isUnknownError
-      ? Log.warn(this.name, 'HTML5 unknown error: ', formattedError)
-      : this.trigger(Events.PLAYBACK_ERROR, formattedError)
+    this.trigger(Events.PLAYBACK_ERROR, formattedError)
   }
 
   load(sourceURL) {
@@ -383,9 +382,12 @@ export default class HTML5TVsPlayback extends Playback {
   _wipeUpMedia() {
     this._isReady = false
     this._drmConfigured && DRMHandler.clearLicenseRequest.call(this, this._onDrmCleared, this._onDrmError)
-    this.$sourceElement && this.$sourceElement.removeAttribute('src') // The src attribute will be added again in play().
-    this.$sourceElement && this.$sourceElement.parentNode && this.$sourceElement.parentNode.removeChild(this.$sourceElement)
-    this.$sourceElement = null
+    if (this.$sourceElement) {
+      this.$sourceElement.removeEventListener('error', this._sourceElementErrorHandler)
+      this.$sourceElement.removeAttribute('src') // The src attribute will be added again in play().
+      this.$sourceElement.parentNode && this.$sourceElement.parentNode.removeChild(this.$sourceElement)
+      this.$sourceElement = null
+    }
     this.el.load() // Loads with no src attribute to stop the loading of the previous source and avoid leaks.
   }
 
@@ -400,8 +402,8 @@ export default class HTML5TVsPlayback extends Playback {
   _signalizeReadyState(backOff = 100) {
     if (!this.isReady) return setTimeout(() => { this._signalizeReadyState(backOff * 2) }, backOff)
 
-    this.trigger(Events.PLAYBACK_READY, this.name)
     this._isReady = true
+    this.trigger(Events.PLAYBACK_READY, this.name)
   }
 
   /**
