@@ -156,9 +156,11 @@ export default class HTML5TVsPlayback extends Playback {
   }
 
   _appendSourceElement() {
-    this.config && this.config.drm && !this._drmConfigured
-      ? DRMHandler.sendLicenseRequest.call(this, this.config.drm, this._onDrmConfigured, this._onDrmError)
-      : this.el.appendChild(this.$sourceElement)
+    const shouldConfigureDRM = this.config && this.config.drm && !this._drmConfigured
+    if (shouldConfigureDRM) return DRMHandler.sendLicenseRequest.call(this, this.config.drm, this._onDrmConfigured, this._onDrmError)
+
+    this.el.appendChild(this.$sourceElement)
+    this.el.load()
   }
 
   _onDrmConfigured() {
@@ -376,6 +378,9 @@ export default class HTML5TVsPlayback extends Playback {
     this._isDestroyed = true
     super.destroy()
     this._wipeUpMedia()
+    const { audioTracks } = this.el
+    audioTracks?.removeEventListener('addtrack', this._onAudioTracksUpdated)
+    audioTracks?.removeEventListener('removetrack', this._onAudioTracksUpdated)
     this._src = null
   }
 
@@ -384,11 +389,11 @@ export default class HTML5TVsPlayback extends Playback {
     this._drmConfigured && DRMHandler.clearLicenseRequest.call(this, this._onDrmCleared, this._onDrmError)
     if (this.$sourceElement) {
       this.$sourceElement.removeEventListener('error', this._sourceElementErrorHandler)
-      this.$sourceElement.removeAttribute('src') // The src attribute will be added again in play().
+      this.$sourceElement.src = '' // The src attribute will be added again in play().
+      this.el.load() // Loads with no src attribute to stop the loading of the previous source and avoid leaks.
       this.$sourceElement.parentNode && this.$sourceElement.parentNode.removeChild(this.$sourceElement)
       this.$sourceElement = null
     }
-    this.el.load() // Loads with no src attribute to stop the loading of the previous source and avoid leaks.
   }
 
   /**
