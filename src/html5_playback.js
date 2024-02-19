@@ -39,11 +39,18 @@ export default class HTML5TVsPlayback extends Playback {
 
   get currentTime() { return this.el.currentTime }
 
+  get _liveDuration() {
+    try {
+      return this.el.seekable.end(this.el.seekable.length - 1) - this.el.seekable.start(0)
+    } catch (error) {
+      Log.warn(this.name, 'Fail to determine live duration.', error)
+    }
+    return this.el.duration
+  }
+
   get duration() {
     // The HTMLMediaElement.duration returns Infinity for live streams: https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/duration#value
-    return this.isLive
-      ? this.el.seekable.end(this.el.seekable.length - 1) - this.el.seekable.start(0)
-      : this.el.duration
+    return this.isLive ? this._liveDuration : this.el.duration
   }
 
   get ended() { return this.el.ended }
@@ -312,12 +319,13 @@ export default class HTML5TVsPlayback extends Playback {
 
   _onError(e) {
     Log.warn(this.name, 'The HTMLMediaElement error event is triggered: ', e)
-    const { code, message } = this.$sourceElement?.error || this.el.error || UNKNOWN_ERROR
+    const rawError = this.$sourceElement?.error || this.el.error || UNKNOWN_ERROR
+    const { code, message } = rawError
 
     const formattedError = this.createError({
       code,
       description: message,
-      raw: this.el.error,
+      raw: rawError,
       level: PlayerError.Levels.FATAL,
     })
 
@@ -351,7 +359,11 @@ export default class HTML5TVsPlayback extends Playback {
     const dvrStatus = timeToSeek < this.duration - LIVE_STATE_THRESHOLD
 
     this.dvrEnabled && this._updateDvr(dvrStatus)
-    this.el.seekable && this.el.seekable.start && (timeToSeek += this.el.seekable.start(0))
+    try {
+      timeToSeek += this.el.seekable.start(0)
+    } catch (error) {
+      Log.warn(this.name, 'The seekable.start(0) is not available', error)
+    }
 
     this.el.currentTime = timeToSeek
   }
