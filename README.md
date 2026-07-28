@@ -1,3 +1,13 @@
+> [!WARNING]
+> **This repository is deprecated and archived.**
+>
+> Development moved into the Clappr monorepo:
+> [`clappr/clappr` → `packages/html5-tvs-playback`](https://github.com/clappr/clappr/tree/main/packages/html5-tvs-playback)
+>
+> npm package: [`@clappr/clappr-html5-tvs-playback`](https://www.npmjs.com/package/@clappr/clappr-html5-tvs-playback)
+>
+> Open issues and PRs against [clappr/clappr](https://github.com/clappr/clappr). Migration PR: [#2454](https://github.com/clappr/clappr/pull/2454)
+
 <!-- [![](https://data.jsdelivr.com/v1/package/npm/@joaopaulo.vieira/clappr-html5-tvs-playback//badge)](https://www.jsdelivr.com/package/npm/@joaopaulo.vieira/clappr-html5-tvs-playback/) -->
 <!-- [![](https://img.shields.io/npm/v/@joaopaulo.vieira/clappr-html5-tvs-playback/.svg?style=flat-square)](https://npmjs.org/package/@joaopaulo.vieira/clappr-html5-tvs-playback/) -->
 <!-- [![](https://img.shields.io/npm/dt/@joaopaulo.vieira/clappr-html5-tvs-playback/.svg?style=flat-square)](https://npmjs.org/package/@joaopaulo.vieira/clappr-html5-tvs-playback/) -->
